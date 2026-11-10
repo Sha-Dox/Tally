@@ -52,7 +52,10 @@ struct MenuBarLabel: View {
     private var text: String? {
         switch MenuBarStyle(rawValue: style) ?? .percent {
         case .percent:
-            return model.sessionLimit.map { "\(Int($0.percent.rounded()))%" }
+            let parts = [("5h", model.sessionLimit), ("7d", model.weeklyLimit)].compactMap { label, limit in
+                limit.map { "\(label) \(Int($0.percent.rounded()))%" }
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
         case .context:
             return model.sessions.compactMap(\.context?.tokens).max().map(Format.tokens)
         case .icon:
@@ -62,7 +65,8 @@ struct MenuBarLabel: View {
 
     private var accessibilityText: String {
         var parts = ["Claude Code usage"]
-        if let limit = model.sessionLimit { parts.append("\(Int(limit.percent)) percent of current session limit") }
+        if let limit = model.sessionLimit { parts.append("\(Int(limit.percent)) percent of 5-hour limit") }
+        if let limit = model.weeklyLimit { parts.append("\(Int(limit.percent)) percent of weekly limit") }
         if warning { parts.append("\(model.overThreshold.count) sessions over the context threshold") }
         return parts.joined(separator: ", ")
     }
@@ -71,13 +75,14 @@ struct MenuBarLabel: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(SettingsKey.threshold) private var threshold = 400_000
+    @AppStorage(SettingsKey.criticalThreshold) private var critical = 600_000
     @AppStorage(SettingsKey.notifyContext) private var notifyContext = true
     @AppStorage(SettingsKey.notifyPlan) private var notifyPlan = true
     @AppStorage(SettingsKey.showPlan) private var showPlan = true
     @AppStorage(SettingsKey.menuBarStyle) private var style = MenuBarStyle.percent.rawValue
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
-    private let thresholds = [200_000, 300_000, 400_000, 500_000, 600_000, 800_000]
+    private let thresholds = [200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000]
 
     var body: some View {
         Form {
@@ -85,11 +90,14 @@ struct SettingsView: View {
                 Picker("Warn when context exceeds", selection: $threshold) {
                     ForEach(thresholds, id: \.self) { Text("\(Format.tokens($0)) tokens").tag($0) }
                 }
+                Picker("Turn red above", selection: $critical) {
+                    ForEach(thresholds.filter { $0 > threshold }, id: \.self) { Text("\(Format.tokens($0)) tokens").tag($0) }
+                }
                 Toggle("Send a notification", isOn: $notifyContext)
             } header: {
                 Text("Context")
             } footer: {
-                Text("Each session's context is the token count of its latest reply. The warning resets after you compact.")
+                Text("Context turns orange past the warning level and red past the second one. Each session's context is the token count of its latest reply; the warning resets after you compact.")
                     .foregroundStyle(.secondary)
             }
 
@@ -126,7 +134,11 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
-        .onChange(of: threshold) { model.refreshSessions() }
+        .onChange(of: threshold) {
+            if critical <= threshold { critical = thresholds.first { $0 > threshold } ?? threshold }
+            model.refreshSessions()
+        }
+        .onChange(of: critical) { model.refreshSessions() }
         .onChange(of: showPlan) { Task { await model.refreshPlan(force: true) } }
     }
 }

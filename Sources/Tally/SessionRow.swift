@@ -10,7 +10,7 @@ struct SessionRow: View {
     @FocusState private var fieldFocused: Bool
 
     private var tokens: Int? { session.context?.tokens }
-    private var over: Bool { (tokens ?? 0) >= model.threshold }
+    private var tint: Color? { model.contextTint(tokens) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -30,13 +30,13 @@ struct SessionRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            ContextMeter(tokens: tokens, compacted: session.context?.compacted == true, threshold: model.threshold)
+            ContextMeter(tokens: tokens, scale: model.criticalThreshold, tint: tint)
 
             HStack(spacing: 6) {
                 Group {
                     if let tokens {
                         Text("\(Format.tokens(tokens)) context")
-                            .foregroundStyle(over ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                            .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
                     } else if session.context?.compacted == true {
                         Text("Just compacted").foregroundStyle(.secondary)
                     } else {
@@ -103,7 +103,7 @@ struct SessionRow: View {
                 iconButton("arrow.down.right.and.arrow.up.left", help: session.isIdle ? "Compact context" : "Compact when idle") {
                     model.compact(session)
                 }
-                .tint(over ? .orange : nil)
+                .tint(tint)
                 iconButton("text.bubble", help: "Send a message") { composing.toggle() }
                 iconButton("arrow.up.forward.app", help: "Go to this session in Rex") { model.show(session) }
             }
@@ -223,26 +223,17 @@ struct MeterBar: View {
     }
 }
 
-/// A bar that fills toward the warning threshold and turns orange past it.
+/// A bar scaled to the red level; orange past the warning level, red past the red one.
 private struct ContextMeter: View {
     let tokens: Int?
-    let compacted: Bool
-    let threshold: Int
+    let scale: Int
+    let tint: Color?
 
     var body: some View {
-        MeterBar(fraction: Double(tokens ?? 0) / Double(threshold), tint: tint)
-        .accessibilityElement()
-        .accessibilityLabel("Context")
-        .accessibilityValue(tokens.map { "\(Format.tokens($0)) of \(Format.tokens(threshold)) tokens" } ?? "Unknown")
-    }
-
-    private var tint: Color {
-        let fraction = Double(tokens ?? 0) / Double(threshold)
-        switch fraction {
-        case 1...: return .orange
-        case 0.75...: return .yellow
-        default: return .accentColor
-        }
+        MeterBar(fraction: Double(tokens ?? 0) / Double(scale), tint: tint ?? .accentColor)
+            .accessibilityElement()
+            .accessibilityLabel("Context")
+            .accessibilityValue(tokens.map { "\(Format.tokens($0)) tokens" } ?? "Unknown")
     }
 }
 

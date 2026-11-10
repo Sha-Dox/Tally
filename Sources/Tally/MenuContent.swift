@@ -166,10 +166,12 @@ private struct WarningBanner: View {
 
     var body: some View {
         let over = model.overThreshold
+        let critical = over.contains { ($0.context?.tokens ?? 0) >= model.criticalThreshold }
+        let color: Color = critical ? .red : .orange
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title3)
-                .foregroundStyle(.orange)
+                .foregroundStyle(color)
                 .symbolEffect(.pulse, options: .repeat(3))
             VStack(alignment: .leading, spacing: 2) {
                 Text(over.count == 1 ? "\(over[0].projectName) is over \(Format.tokens(model.threshold))" : "\(over.count) sessions are over \(Format.tokens(model.threshold))")
@@ -182,11 +184,11 @@ private struct WarningBanner: View {
             if over.count == 1, over[0].canControl {
                 Button("Compact") { model.compact(over[0]) }
                     .buttonStyle(.glassProminent)
-                    .tint(.orange)
+                    .tint(color)
             }
         }
         .padding(12)
-        .glassEffect(.regular.tint(.orange.opacity(0.18)), in: .rect(cornerRadius: 16))
+        .glassEffect(.regular.tint(color.opacity(0.18)), in: .rect(cornerRadius: 16))
         .accessibilityElement(children: .combine)
     }
 }

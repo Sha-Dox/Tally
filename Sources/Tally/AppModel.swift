@@ -1,10 +1,12 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
 import UserNotifications
 
 enum SettingsKey {
     static let threshold = "contextThreshold"
+    static let criticalThreshold = "contextCriticalThreshold"
     static let notifyContext = "notifyContext"
     static let notifyPlan = "notifyPlan"
     static let menuBarStyle = "menuBarStyle"
@@ -34,9 +36,28 @@ final class AppModel {
         return v > 0 ? v : 400_000
     }
 
+    var criticalThreshold: Int {
+        let v = UserDefaults.standard.integer(forKey: SettingsKey.criticalThreshold)
+        return max(v > 0 ? v : 600_000, threshold)
+    }
+
+    /// Normal below the warning threshold, orange past it, red past the critical one.
+    func contextTint(_ tokens: Int?) -> Color? {
+        guard let tokens else { return nil }
+        if tokens >= criticalThreshold { return .red }
+        if tokens >= threshold { return .orange }
+        return nil
+    }
+
+    var weeklyLimit: PlanLimit? {
+        if case .loaded(let limits) = plan { return limits.first { $0.id == "seven_day" } }
+        return nil
+    }
+
     init() {
         UserDefaults.standard.register(defaults: [
             SettingsKey.threshold: 400_000,
+            SettingsKey.criticalThreshold: 600_000,
             SettingsKey.notifyContext: true,
             SettingsKey.notifyPlan: true,
             SettingsKey.menuBarStyle: MenuBarStyle.percent.rawValue,
@@ -314,7 +335,7 @@ enum MenuBarStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .percent: "Plan usage"
+        case .percent: "Plan usage (5h · 7d)"
         case .context: "Largest context"
         case .icon: "Icon only"
         }
