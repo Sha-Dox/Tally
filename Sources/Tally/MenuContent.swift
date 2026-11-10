@@ -166,8 +166,7 @@ private struct WarningBanner: View {
 
     var body: some View {
         let over = model.overThreshold
-        let critical = over.contains { ($0.context?.tokens ?? 0) >= model.criticalThreshold }
-        let color: Color = critical ? .red : .orange
+        let color = model.contextColor(over.compactMap(\.context?.tokens).max())
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title3)

@@ -30,7 +30,7 @@ struct SessionRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            ContextMeter(tokens: tokens, scale: model.criticalThreshold, tint: tint)
+            ContextMeter(tokens: tokens, scale: model.criticalThreshold, tint: model.contextColor(tokens))
 
             HStack(spacing: 6) {
                 Group {
@@ -223,14 +223,14 @@ struct MeterBar: View {
     }
 }
 
-/// A bar scaled to the red level; orange past the warning level, red past the red one.
+/// A bar scaled to the red level whose colour shifts gradually with size.
 private struct ContextMeter: View {
     let tokens: Int?
     let scale: Int
-    let tint: Color?
+    let tint: Color
 
     var body: some View {
-        MeterBar(fraction: Double(tokens ?? 0) / Double(scale), tint: tint ?? .accentColor)
+        MeterBar(fraction: Double(tokens ?? 0) / Double(scale), tint: tint)
             .accessibilityElement()
             .accessibilityLabel("Context")
             .accessibilityValue(tokens.map { "\(Format.tokens($0)) tokens" } ?? "Unknown")

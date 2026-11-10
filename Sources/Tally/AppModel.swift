@@ -41,12 +41,26 @@ final class AppModel {
         return max(v > 0 ? v : 600_000, threshold)
     }
 
-    /// Normal below the warning threshold, orange past it, red past the critical one.
+    /// A colour that shifts smoothly with context size: green when small,
+    /// through yellow, reaching orange at the warning level and red at the
+    /// critical one.
+    func contextColor(_ tokens: Int?) -> Color {
+        let t = Double(tokens ?? 0)
+        let warn = Double(threshold), crit = Double(criticalThreshold)
+        // Hue stops: green 0.36 → orange 0.08 at warn → red 0.0 at crit.
+        let hue: Double
+        if t <= warn {
+            hue = 0.36 - (0.36 - 0.08) * (t / warn)
+        } else {
+            hue = 0.08 * (1 - min((t - warn) / max(crit - warn, 1), 1))
+        }
+        return Color(hue: hue, saturation: 0.82, brightness: 0.95)
+    }
+
+    /// Only past the warning level, for text and buttons that are neutral otherwise.
     func contextTint(_ tokens: Int?) -> Color? {
-        guard let tokens else { return nil }
-        if tokens >= criticalThreshold { return .red }
-        if tokens >= threshold { return .orange }
-        return nil
+        guard let tokens, tokens >= threshold else { return nil }
+        return contextColor(tokens)
     }
 
     var weeklyLimit: PlanLimit? {
