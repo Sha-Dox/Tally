@@ -240,16 +240,8 @@ private struct LimitRow: View {
 
 private struct SessionsSection: View {
     @Environment(AppModel.self) private var model
-    @State private var listHeight: CGFloat = 0
-
-    /// Room left on screen after the other sections (about 560pt).
-    private var maxListHeight: CGFloat {
-        max(300, (NSScreen.main?.visibleFrame.height ?? 900) - 560)
-    }
 
     var body: some View {
-        // Padding lives inside the scroll view so the busy pulse and glass
-        // shadows at the edges aren't clipped by it.
         SectionCard("Sessions", contentPadding: 0) {
             if model.sessions.isEmpty {
                 ContentUnavailableView {
@@ -260,22 +252,13 @@ private struct SessionsSection: View {
                 .controlSize(.small)
                 .padding(12)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(Array(model.sessions.enumerated()), id: \.element.id) { index, session in
-                            if index > 0 { Divider().padding(.vertical, 10) }
-                            SessionRow(session: session)
-                        }
+                VStack(spacing: 0) {
+                    ForEach(Array(model.sessions.enumerated()), id: \.element.id) { index, session in
+                        if index > 0 { Divider().padding(.vertical, 10) }
+                        SessionRow(session: session)
                     }
-                    .padding(12)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                // A ScrollView has no height of its own in a menu bar window,
-                // so size it to its rows and only scroll past what fits.
-                .frame(height: min(max(listHeight.rounded(.up), 1), maxListHeight))
-                // Lock scrolling entirely when every row fits.
-                .scrollDisabled(listHeight <= maxListHeight)
+                .padding(12)
             }
         }
     }
