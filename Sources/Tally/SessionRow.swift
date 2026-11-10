@@ -105,14 +105,17 @@ struct SessionRow: View {
                 }
                 .tint(over ? .orange : nil)
                 iconButton("text.bubble", help: "Send a message") { composing.toggle() }
-                iconButton("macwindow", help: "Show in Rex") { model.show(session) }
+                iconButton("arrow.up.forward.app", help: "Go to this session in Rex") { model.show(session) }
             }
             Menu {
                 menuItems
             } label: {
                 Image(systemName: "ellipsis")
+                    .frame(width: 14, height: 14)
             }
             .menuStyle(.button)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .menuIndicator(.hidden)
             .fixedSize()
             .help("More")
@@ -127,7 +130,7 @@ struct SessionRow: View {
     @ViewBuilder
     private var menuItems: some View {
         if session.canControl {
-            Button("Show in Rex", systemImage: "macwindow") { model.show(session) }
+            Button("Show in Rex", systemImage: "arrow.up.forward.app") { model.show(session) }
             Button("Compact", systemImage: "arrow.down.right.and.arrow.up.left") { model.compact(session) }
             Button("Send Message…", systemImage: "text.bubble") { composing = true }
             if session.isBusy {
