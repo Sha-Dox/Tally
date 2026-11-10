@@ -119,6 +119,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.showPlan) private var showPlan = true
     @AppStorage(SettingsKey.menuBarStyle) private var style = MenuBarStyle.percent.rawValue
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @AppStorage(SettingsKey.followClaudeCode) private var followClaudeCode = false
+    @State private var hookError: String?
 
     private let thresholds = [200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000]
 
@@ -149,6 +151,9 @@ struct SettingsView: View {
                 Picker("Show", selection: $style) {
                     ForEach(MenuBarStyle.allCases) { Text($0.title).tag($0.rawValue) }
                 }
+            }
+
+            Section {
                 Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
@@ -157,6 +162,25 @@ struct SettingsView: View {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
+                Toggle("Open and quit with Claude Code", isOn: $followClaudeCode)
+                    .onChange(of: followClaudeCode) { _, enabled in
+                        guard enabled != ClaudeCodeHook.isInstalled else { return }
+                        do {
+                            try ClaudeCodeHook.setInstalled(enabled)
+                            hookError = nil
+                        } catch {
+                            hookError = "Couldn't update ~/.claude/settings.json: \(error.localizedDescription)"
+                            followClaudeCode = ClaudeCodeHook.isInstalled
+                        }
+                    }
+            } header: {
+                Text("Startup")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Open and quit with Claude Code adds a SessionStart hook to ~/.claude/settings.json that opens Tally in the background, and quits Tally 30 seconds after the last session ends.")
+                    if let hookError { Text(hookError).foregroundStyle(.red) }
+                }
+                .foregroundStyle(.secondary)
             }
 
             Section("Session Controls") {
@@ -177,6 +201,11 @@ struct SettingsView: View {
             model.refreshSessions()
         }
         .onChange(of: critical) { model.refreshSessions() }
+        .onAppear {
+            // Reflect the real state in case settings.json was edited elsewhere.
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            if followClaudeCode != ClaudeCodeHook.isInstalled { followClaudeCode = ClaudeCodeHook.isInstalled }
+        }
         .onChange(of: showPlan) { Task { await model.refreshPlan(force: true) } }
     }
 }

@@ -12,6 +12,7 @@ enum SettingsKey {
     static let menuBarStyle = "menuBarStyle"
     static let showPlan = "showPlan"
     static let pinnedSessions = "pinnedSessions"
+    static let followClaudeCode = "followClaudeCode"
 }
 
 @MainActor
@@ -30,6 +31,8 @@ final class AppModel {
     @ObservationIgnored private var planWarned: Set<String> = []
     @ObservationIgnored private var planFetchedAt: Date?
     @ObservationIgnored private var timers: [Timer] = []
+    @ObservationIgnored private var hadSessions = false
+    @ObservationIgnored private var emptySince: Date?
     var pendingCompactions: Set<String> = []
 
     var threshold: Int {
@@ -208,6 +211,7 @@ final class AppModel {
             }
         }
         lastUpdated = .now
+        quitIfClaudeCodeStopped()
         pendingCompactions.formIntersection(Set(found.map(\.id)))
         for session in found where session.isIdle && pendingCompactions.contains(session.id) {
             compact(session)
@@ -234,6 +238,21 @@ final class AppModel {
         }
         plan = result
         checkPlanWarnings()
+    }
+
+    /// With "Open and quit with Claude Code" on, quit once the last session
+    /// has been gone for a while. Only after sessions were seen, so a launch at
+    /// login or by hand keeps Tally open until Claude Code has run.
+    private func quitIfClaudeCodeStopped() {
+        if !sessions.isEmpty {
+            hadSessions = true
+            emptySince = nil
+            return
+        }
+        guard hadSessions, UserDefaults.standard.bool(forKey: SettingsKey.followClaudeCode) else { return }
+        let since = emptySince ?? .now
+        emptySince = since
+        if Date.now.timeIntervalSince(since) >= 30 { NSApp.terminate(nil) }
     }
 
     // MARK: Warnings

@@ -24,6 +24,12 @@ Liquid Glass.
 - **Today:** total, output and cache-read tokens, replies, a 7-day chart and
   your top projects.
 
+- **Startup:** *Open at login*, and *Open and quit with Claude Code*. The
+  second adds a `SessionStart` hook to `~/.claude/settings.json` that runs
+  `open -g -b com.mert.tally`, and makes Tally quit 30 seconds after the last
+  session ends. Turning it off removes the hook. The first time Tally edits the
+  file, it saves a copy as `settings.json.tally-backup`.
+
 ## Requirements
 
 - macOS 26 or later
