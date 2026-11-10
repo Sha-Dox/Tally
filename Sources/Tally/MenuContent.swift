@@ -273,7 +273,9 @@ private struct SessionsSection: View {
                 .scrollBounceBehavior(.basedOnSize)
                 // A ScrollView has no height of its own in a menu bar window,
                 // so size it to its rows and only scroll past what fits.
-                .frame(height: min(max(listHeight, 1), maxListHeight))
+                .frame(height: min(max(listHeight.rounded(.up), 1), maxListHeight))
+                // Lock scrolling entirely when every row fits.
+                .scrollDisabled(listHeight <= maxListHeight)
             }
         }
     }
