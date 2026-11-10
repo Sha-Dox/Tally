@@ -107,19 +107,9 @@ struct SessionRow: View {
                 iconButton("text.bubble", help: "Send a message") { composing.toggle() }
                 iconButton("arrow.up.forward.app", help: "Go to this session in Rex") { model.show(session) }
             }
-            Menu {
-                menuItems
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 14, height: 14)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More")
-            .accessibilityLabel("More actions for \(session.name)")
+            // A plain button (not a SwiftUI Menu) so it gets the exact same
+            // glass circle as its neighbours; it pops up a native menu.
+            iconButton("ellipsis", help: "More actions") { showMoreMenu() }
         }
         }
         .buttonStyle(.glass)
@@ -130,7 +120,7 @@ struct SessionRow: View {
     @ViewBuilder
     private var menuItems: some View {
         if session.canControl {
-            Button("Show in Rex", systemImage: "arrow.up.forward.app") { model.show(session) }
+            Button("Go to Session in Rex", systemImage: "arrow.up.forward.app") { model.show(session) }
             Button("Compact", systemImage: "arrow.down.right.and.arrow.up.left") { model.compact(session) }
             Button("Send Message…", systemImage: "text.bubble") { composing = true }
             if session.isBusy {
@@ -152,6 +142,31 @@ struct SessionRow: View {
         }
         .help(help)
         .accessibilityLabel(help)
+    }
+
+    private func showMoreMenu() {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        func add(_ title: String, _ symbol: String, enabled: Bool = true, _ action: @escaping () -> Void) {
+            let item = ClosureMenuItem(title: title, action: action)
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            item.isEnabled = enabled
+            menu.addItem(item)
+        }
+        if session.canControl {
+            add("Go to Session in Rex", "arrow.up.forward.app") { model.show(session) }
+            add("Compact", "arrow.down.right.and.arrow.up.left") { model.compact(session) }
+            add("Send Message…", "text.bubble") { composing = true }
+            if session.isBusy {
+                add("Interrupt", "stop") { model.interrupt(session) }
+            }
+            menu.addItem(.separator())
+        }
+        add("Copy Resume Command", "doc.on.doc") { model.copyResumeCommand(session) }
+        add("Show Transcript in Finder", "folder", enabled: session.transcriptURL != nil) { model.revealTranscript(session) }
+        menu.addItem(.separator())
+        add("End Session…", "xmark.circle") { confirmingEnd = true }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     private func sendMessage() {
@@ -229,4 +244,18 @@ private struct ContextMeter: View {
         default: return .accentColor
         }
     }
+}
+
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, action handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func fire() { handler() }
 }
