@@ -28,11 +28,45 @@ struct MenuBarLabel: View {
     @AppStorage(SettingsKey.menuBarStyle) private var style = MenuBarStyle.percent.rawValue
 
     var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol)
-            if let text { Text(text).monospacedDigit() }
+        Group {
+            if (MenuBarStyle(rawValue: style) ?? .percent) == .percent, let session = model.sessionLimit {
+                // The menu bar only draws a single line, so the stacked
+                // layout is rendered to a template image.
+                Image(nsImage: stackedImage(session: session, weekly: model.weeklyLimit))
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: symbol)
+                    if let text { Text(text).monospacedDigit() }
+                }
+            }
         }
         .accessibilityLabel(accessibilityText)
+    }
+
+    private func stackedImage(session: PlanLimit, weekly: PlanLimit?) -> NSImage {
+        let font = Font.system(size: 9.5, weight: .semibold).monospacedDigit()
+        let content = Grid(alignment: .trailing, horizontalSpacing: 2, verticalSpacing: -1) {
+            GridRow {
+                Image(systemName: symbol).font(.system(size: 9, weight: .bold))
+                    .gridColumnAlignment(.center)
+                Text("\(Int(session.percent.rounded()))%")
+            }
+            if let weekly {
+                GridRow {
+                    Text("W").font(.system(size: 8.5, weight: .heavy))
+                    Text("\(Int(weekly.percent.rounded()))%")
+                }
+            }
+        }
+        .font(font)
+        .foregroundStyle(.black)
+        .frame(height: 22)
+
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        let image = renderer.nsImage ?? NSImage()
+        image.isTemplate = true
+        return image
     }
 
     private var warning: Bool { !model.overThreshold.isEmpty }
