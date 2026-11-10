@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IOKit.pwr_mgt
 import Observation
 import SwiftUI
 import UserNotifications
@@ -13,6 +14,7 @@ enum SettingsKey {
     static let showPlan = "showPlan"
     static let pinnedSessions = "pinnedSessions"
     static let followClaudeCode = "followClaudeCode"
+    static let keepAwake = "keepAwake"
 }
 
 @MainActor
@@ -34,6 +36,16 @@ final class AppModel {
     @ObservationIgnored private var hadSessions = false
     @ObservationIgnored private var emptySince: Date?
     var pendingCompactions: Set<String> = []
+
+    /// When on, the Mac won't idle-sleep while any session is working.
+    var keepAwake = UserDefaults.standard.bool(forKey: SettingsKey.keepAwake) {
+        didSet {
+            UserDefaults.standard.set(keepAwake, forKey: SettingsKey.keepAwake)
+            updateSleepAssertion()
+        }
+    }
+    private(set) var isPreventingSleep = false
+    @ObservationIgnored private var sleepAssertion = IOPMAssertionID(0)
 
     var threshold: Int {
         let v = UserDefaults.standard.integer(forKey: SettingsKey.threshold)
@@ -216,6 +228,7 @@ final class AppModel {
             }
         }
         lastUpdated = .now
+        updateSleepAssertion()
         quitIfClaudeCodeStopped()
         pendingCompactions.formIntersection(Set(found.map(\.id)))
         for session in found where session.isIdle && pendingCompactions.contains(session.id) {
@@ -258,6 +271,25 @@ final class AppModel {
         let since = emptySince ?? .now
         emptySince = since
         if Date.now.timeIntervalSince(since) >= 30 { NSApp.terminate(nil) }
+    }
+
+    /// Holds a "prevent idle sleep" power assertion only while it's needed.
+    /// The system drops it automatically if Tally quits. The display can still
+    /// sleep, and closing a laptop's lid still sleeps the Mac.
+    private func updateSleepAssertion() {
+        let needed = keepAwake && sessions.contains(where: \.isBusy)
+        if needed, !isPreventingSleep {
+            let result = IOPMAssertionCreateWithName(
+                kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+                IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                "Claude Code is working" as CFString,
+                &sleepAssertion
+            )
+            isPreventingSleep = result == kIOReturnSuccess
+        } else if !needed, isPreventingSleep {
+            IOPMAssertionRelease(sleepAssertion)
+            isPreventingSleep = false
+        }
     }
 
     // MARK: Warnings

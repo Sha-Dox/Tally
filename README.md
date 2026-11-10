@@ -21,6 +21,10 @@ Liquid Glass.
   the session, compact (queued until the session is idle), interrupt, or send
   it a message. Also: pin to top, copy resume command, show transcript, end
   session.
+- **Keep awake:** the ☕ button in the header stops your Mac from
+  idle-sleeping while any session is working, and lets it sleep normally once
+  they're all idle. The display can still turn off. A laptop still sleeps if
+  you close the lid, unless it's on power with an external display.
 - **Today:** total, output and cache-read tokens, replies, a 7-day chart and
   your top projects.
 

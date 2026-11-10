@@ -53,6 +53,17 @@ private struct Header: View {
             }
             Spacer()
             Button {
+                model.keepAwake.toggle()
+            } label: {
+                Image(systemName: model.keepAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
+                    .foregroundStyle(model.keepAwake ? AnyShapeStyle(.orange) : AnyShapeStyle(.primary))
+                    .symbolEffect(.pulse, isActive: model.isPreventingSleep)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .help(model.keepAwake ? "Keep awake is on: your Mac won't sleep while Claude is working" : "Keep your Mac awake while Claude is working")
+            .accessibilityLabel("Keep awake while Claude is working")
+            .accessibilityValue(model.keepAwake ? "On" : "Off")
+            Button {
                 model.refreshAll()
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -70,7 +81,8 @@ private struct Header: View {
     private var subtitle: String {
         if model.isScanning && model.days.isEmpty { return "Reading transcripts…" }
         let live = model.sessions.count
-        let sessions = live == 1 ? "1 live session" : "\(live) live sessions"
+        var sessions = live == 1 ? "1 live session" : "\(live) live sessions"
+        if model.isPreventingSleep { sessions += " · keeping awake" }
         guard let updated = model.lastUpdated else { return sessions }
         return "\(sessions) · updated \(updated.formatted(.relative(presentation: .named)))"
     }
