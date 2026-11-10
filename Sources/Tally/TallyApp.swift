@@ -121,6 +121,9 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage(SettingsKey.followClaudeCode) private var followClaudeCode = false
     @State private var hookError: String?
+    @AppStorage(SettingsKey.keepAwakeLidClosed) private var lidClosed = true
+    @State private var lidSetUp = LidSleep.isSetUp
+    @State private var lidError: String?
 
     private let thresholds = [200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000]
 
@@ -140,6 +143,36 @@ struct SettingsView: View {
                 Text("Context turns orange past the warning level and red past the second one. Each session's context is the token count of its latest reply; the warning resets after you compact.")
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                @Bindable var model = model
+                Toggle("Keep Mac awake while Claude is working", isOn: $model.keepAwake)
+                Toggle("Even with the lid closed", isOn: $lidClosed)
+                    .disabled(!lidSetUp || !model.keepAwake)
+                LabeledContent("Lid-closed permission") {
+                    if lidSetUp {
+                        Button("Remove") {
+                            lidError = LidSleep.remove()
+                            lidSetUp = LidSleep.isSetUp
+                        }
+                    } else {
+                        Button("Set Up…") {
+                            lidError = LidSleep.setUp()
+                            lidSetUp = LidSleep.isSetUp
+                            model.updateSleepAssertion()
+                        }
+                    }
+                }
+            } header: {
+                Text("Keep Awake")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("macOS always sleeps when the lid closes, which cuts the network and makes Claude Code fail. Set Up asks for your password once, so Tally can turn that off while a session is working and back on when it's idle or Tally quits. It stops below 15% battery.")
+                    if let lidError { Text(lidError).foregroundStyle(.red) }
+                }
+                .foregroundStyle(.secondary)
+            }
+            .onChange(of: lidClosed) { model.updateSleepAssertion() }
 
             Section("Plan") {
                 Toggle("Show plan limits", isOn: $showPlan)

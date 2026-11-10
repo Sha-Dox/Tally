@@ -82,7 +82,11 @@ private struct Header: View {
         if model.isScanning && model.days.isEmpty { return "Reading transcripts…" }
         let live = model.sessions.count
         var sessions = live == 1 ? "1 live session" : "\(live) live sessions"
-        if model.isPreventingSleep { sessions += " · keeping awake" }
+        if model.isLidSleepDisabled {
+            sessions += " · awake, lid too"
+        } else if model.isPreventingSleep {
+            sessions += " · keeping awake"
+        }
         guard let updated = model.lastUpdated else { return sessions }
         return "\(sessions) · updated \(updated.formatted(.relative(presentation: .named)))"
     }

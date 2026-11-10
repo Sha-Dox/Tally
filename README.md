@@ -21,10 +21,16 @@ Liquid Glass.
   the session, compact (queued until the session is idle), interrupt, or send
   it a message. Also: pin to top, copy resume command, show transcript, end
   session.
-- **Keep awake:** the ☕ button in the header stops your Mac from
-  idle-sleeping while any session is working, and lets it sleep normally once
-  they're all idle. The display can still turn off. A laptop still sleeps if
-  you close the lid, unless it's on power with an external display.
+- **Keep awake:** the ☕ button in the header keeps your Mac and its network
+  awake while any session is working, and lets it sleep normally once they're
+  all idle. The display can still turn off.
+  - **Lid closed:** macOS always sleeps when the lid closes, and that drops
+    Wi-Fi mid-request. *Settings → Keep Awake → Set Up…* asks for your
+    password once and installs `/etc/sudoers.d/tally-pmset`, which allows only
+    `pmset -a disablesleep 0|1`. Tally then turns lid-closed sleep off while a
+    session is working, and turns it back on when sessions are idle, when Tally
+    quits, on its next launch after a crash, or below 15% battery. *Remove*
+    deletes the rule.
 - **Today:** total, output and cache-read tokens, replies, a 7-day chart and
   your top projects.
 

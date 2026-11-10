@@ -15,6 +15,7 @@ enum SettingsKey {
     static let pinnedSessions = "pinnedSessions"
     static let followClaudeCode = "followClaudeCode"
     static let keepAwake = "keepAwake"
+    static let keepAwakeLidClosed = "keepAwakeLidClosed"
 }
 
 @MainActor
@@ -45,7 +46,10 @@ final class AppModel {
         }
     }
     private(set) var isPreventingSleep = false
+    private(set) var isLidSleepDisabled = false
     @ObservationIgnored private var sleepAssertion = IOPMAssertionID(0)
+    @ObservationIgnored private var networkAssertion = IOPMAssertionID(0)
+    @ObservationIgnored private var lidChangeInFlight = false
 
     var threshold: Int {
         let v = UserDefaults.standard.integer(forKey: SettingsKey.threshold)
@@ -92,8 +96,16 @@ final class AppModel {
             SettingsKey.notifyPlan: true,
             SettingsKey.menuBarStyle: MenuBarStyle.percent.rawValue,
             SettingsKey.showPlan: true,
+            SettingsKey.keepAwakeLidClosed: true,
         ])
         Notifier.shared.configure(model: self)
+
+        // Never leave lid-closed sleep disabled: undo a leftover from a crash,
+        // and restore it when Tally quits.
+        if LidSleep.isOwned { LidSleep.setSleepDisabledSync(false) }
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+            if LidSleep.isOwned { LidSleep.setSleepDisabledSync(false) }
+        }
         refreshSessions()
         Task { await refreshUsage() }
         Task { await refreshPlan(force: true) }
@@ -273,22 +285,34 @@ final class AppModel {
         if Date.now.timeIntervalSince(since) >= 30 { NSApp.terminate(nil) }
     }
 
-    /// Holds a "prevent idle sleep" power assertion only while it's needed.
-    /// The system drops it automatically if Tally quits. The display can still
-    /// sleep, and closing a laptop's lid still sleeps the Mac.
-    private func updateSleepAssertion() {
+    /// While a session is working: holds idle-sleep and network power
+    /// assertions (dropped by the system if Tally quits), and, if set up,
+    /// disables lid-closed sleep, which assertions alone can't prevent.
+    func updateSleepAssertion() {
         let needed = keepAwake && sessions.contains(where: \.isBusy)
         if needed, !isPreventingSleep {
-            let result = IOPMAssertionCreateWithName(
-                kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
-                IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                "Claude Code is working" as CFString,
-                &sleepAssertion
-            )
+            let name = "Claude Code is working" as CFString
+            let level = IOPMAssertionLevel(kIOPMAssertionLevelOn)
+            let result = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString, level, name, &sleepAssertion)
+            // Keeps network connectivity up alongside the CPU.
+            IOPMAssertionCreateWithName(kIOPMAssertNetworkClientActive as CFString, level, name, &networkAssertion)
             isPreventingSleep = result == kIOReturnSuccess
         } else if !needed, isPreventingSleep {
             IOPMAssertionRelease(sleepAssertion)
+            IOPMAssertionRelease(networkAssertion)
             isPreventingSleep = false
+        }
+
+        // Lid closed: stop below 15% battery so a Mac in a bag can't run flat.
+        let battery = LidSleep.batteryLevelOnBattery
+        let wantLid = needed && LidSleep.isSetUp
+            && UserDefaults.standard.bool(forKey: SettingsKey.keepAwakeLidClosed)
+            && (battery ?? 100) >= 15
+        guard wantLid != isLidSleepDisabled, !lidChangeInFlight else { return }
+        lidChangeInFlight = true
+        Task {
+            if await LidSleep.setSleepDisabled(wantLid) { isLidSleepDisabled = wantLid }
+            lidChangeInFlight = false
         }
     }
 
