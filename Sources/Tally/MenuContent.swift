@@ -240,6 +240,12 @@ private struct LimitRow: View {
 
 private struct SessionsSection: View {
     @Environment(AppModel.self) private var model
+    @State private var listHeight: CGFloat = 0
+
+    /// Room left on screen after the other sections (about 560pt).
+    private var maxListHeight: CGFloat {
+        max(300, (NSScreen.main?.visibleFrame.height ?? 900) - 560)
+    }
 
     var body: some View {
         // Padding lives inside the scroll view so the busy pulse and glass
@@ -262,10 +268,12 @@ private struct SessionsSection: View {
                         }
                     }
                     .padding(12)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: 330)
-                .fixedSize(horizontal: false, vertical: model.sessions.count <= 3)
+                // A ScrollView has no height of its own in a menu bar window,
+                // so size it to its rows and only scroll past what fits.
+                .frame(height: min(max(listHeight, 1), maxListHeight))
             }
         }
     }
