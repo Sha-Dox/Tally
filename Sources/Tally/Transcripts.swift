@@ -70,6 +70,8 @@ private enum Timestamps {
 private let assistantMarker = Data(#""type":"assistant""#.utf8)
 private let usageMarker = Data(#""usage""#.utf8)
 private let compactMarker = Data(#""compact_boundary""#.utf8)
+private let customTitleMarker = Data(#""type":"custom-title""#.utf8)
+private let aiTitleMarker = Data(#""type":"ai-title""#.utf8)
 
 enum TranscriptReader {
     static func url(forSession id: String) -> URL? {
@@ -80,6 +82,28 @@ enum TranscriptReader {
             if fm.fileExists(atPath: candidate.path) { return candidate }
         }
         return nil
+    }
+
+    /// The session's title: one the user set (/rename) wins over the one
+    /// Claude generated. Both are re-written periodically, so the tail has them.
+    static func latestTitle(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
+        let start = size > 4 * 1024 * 1024 ? size - 4 * 1024 * 1024 : 0
+        try? handle.seek(toOffset: start)
+        guard let data = try? handle.read(upToCount: Int(size - start)) else { return nil }
+
+        var custom: String?, generated: String?
+        for raw in data.split(separator: 0x0A).reversed() {
+            let isCustom = raw.range(of: customTitleMarker) != nil
+            let isGenerated = raw.range(of: aiTitleMarker) != nil
+            guard (isCustom && custom == nil) || (isGenerated && generated == nil),
+                  let object = try? JSONSerialization.jsonObject(with: Data(raw)) as? [String: Any] else { continue }
+            if isCustom, let t = object["customTitle"] as? String, !t.isEmpty { custom = t; break }
+            if isGenerated, let t = object["aiTitle"] as? String, !t.isEmpty { generated = t }
+        }
+        return custom ?? generated
     }
 
     /// Reads backwards from the end of a transcript until it finds the latest

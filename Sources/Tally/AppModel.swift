@@ -26,7 +26,7 @@ final class AppModel {
     var toast: String?
 
     @ObservationIgnored private let scanner = UsageScanner()
-    @ObservationIgnored private var contextCache: [String: (modified: Date, reading: ContextReading?, cwd: String?)] = [:]
+    @ObservationIgnored private var contextCache: [String: (modified: Date, reading: ContextReading?, cwd: String?, title: String?)] = [:]
     @ObservationIgnored private var warned: Set<String> = []
     @ObservationIgnored private var planWarned: Set<String> = []
     @ObservationIgnored private var planFetchedAt: Date?
@@ -167,6 +167,8 @@ final class AppModel {
                   Processes.isAlive(Int32(pid)) else { continue }
 
             let cwd = raw["cwd"] as? String ?? NSHomeDirectory()
+            // "derived" names (e.g. "mert-36") are placeholders; prefer a real title.
+            let userNamed = raw["nameSource"] as? String == "user"
             var session = LiveSession(
                 id: id,
                 pid: Int32(pid),
@@ -189,11 +191,14 @@ final class AppModel {
                 if let cached = contextCache[url.path], cached.modified == modified {
                     session.context = cached.reading
                     if let c = cached.cwd { session.projectPath = c }
+                    if let t = cached.title, !userNamed { session.name = t }
                 } else {
                     let (reading, latestCwd) = TranscriptReader.latestContext(at: url)
-                    contextCache[url.path] = (modified, reading, latestCwd)
+                    let title = TranscriptReader.latestTitle(at: url)
+                    contextCache[url.path] = (modified, reading, latestCwd, title)
                     session.context = reading
                     if let c = latestCwd { session.projectPath = c }
+                    if let t = title, !userNamed { session.name = t }
                 }
             }
             found.append(session)
