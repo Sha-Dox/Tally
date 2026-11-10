@@ -12,7 +12,6 @@
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
-    <key>NSAppleEventsUsageDescription</key><string>Tally opens new Claude Code sessions in Terminal when Rex isn't installed.</string>
     <key>NSHumanReadableCopyright</key><string>Personal build</string>
 </dict>
 </plist>

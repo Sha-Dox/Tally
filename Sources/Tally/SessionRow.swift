@@ -16,6 +16,13 @@ struct SessionRow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 StatusDot(status: session.status)
+                if model.isPinned(session) {
+                    Image(systemName: "pin.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(45))
+                        .accessibilityLabel("Pinned")
+                }
                 Text(session.projectName)
                     .font(.body.weight(.semibold))
                     .lineLimit(1)
@@ -128,6 +135,7 @@ struct SessionRow: View {
             }
             Divider()
         }
+        Button(model.isPinned(session) ? "Unpin" : "Pin to Top", systemImage: model.isPinned(session) ? "pin.slash" : "pin") { model.togglePin(session) }
         Button("Copy Resume Command", systemImage: "doc.on.doc") { model.copyResumeCommand(session) }
         Button("Show Transcript in Finder", systemImage: "folder") { model.revealTranscript(session) }
             .disabled(session.transcriptURL == nil)
@@ -162,6 +170,7 @@ struct SessionRow: View {
             }
             menu.addItem(.separator())
         }
+        add(model.isPinned(session) ? "Unpin" : "Pin to Top", model.isPinned(session) ? "pin.slash" : "pin") { model.togglePin(session) }
         add("Copy Resume Command", "doc.on.doc") { model.copyResumeCommand(session) }
         add("Show Transcript in Finder", "folder", enabled: session.transcriptURL != nil) { model.revealTranscript(session) }
         menu.addItem(.separator())

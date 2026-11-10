@@ -53,12 +53,16 @@ enum Processes {
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe
-            process.terminationHandler = { p in
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(returning: (p.terminationStatus, String(decoding: data, as: UTF8.self)))
-            }
             do { try process.run() } catch {
                 continuation.resume(returning: (-1, error.localizedDescription))
+                return
+            }
+            // Drain output before waiting so a chatty command can't fill the
+            // pipe and block forever.
+            DispatchQueue.global().async {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                continuation.resume(returning: (process.terminationStatus, String(decoding: data, as: UTF8.self)))
             }
         }
     }
@@ -99,36 +103,10 @@ enum Rex {
         return await Processes.run(rex, ["send-key", "-b", block, key]).status == 0
     }
 
-    static func newSession(in directory: String) async -> Bool {
-        guard let rex = executable else { return false }
-        let result = await Processes.run(rex, ["run", "--interactive", "--cwd", directory, "--label", "claude", "--", "claude"])
-        if result.status == 0 { activateApp() }
-        return result.status == 0
-    }
-
     private static func activateApp() {
         Task { @MainActor in
             NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.activate()
         }
-    }
-}
-
-enum TerminalFallback {
-    /// Opens Terminal.app with a command when Rex isn't installed.
-    static func run(_ command: String, in directory: String) {
-        let script = "cd \(shellQuote(directory)) && \(command)"
-        let source = """
-        tell application "Terminal"
-            activate
-            do script "\(script.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))"
-        end tell
-        """
-        var error: NSDictionary?
-        NSAppleScript(source: source)?.executeAndReturnError(&error)
-    }
-
-    static func shellQuote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 
@@ -149,7 +127,9 @@ enum PlanUsageClient {
         var seven_day_sonnet: Window?
     }
 
-    static func fetch() async -> PlanState {
+    /// Returns nil for transient failures (network, server errors) so callers
+    /// can keep showing the last good numbers.
+    static func fetch() async -> PlanState? {
         let keychain = await Processes.run("/usr/bin/security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"])
         guard keychain.status == 0,
               let creds = try? JSONDecoder().decode(Credentials.self, from: Data(keychain.output.utf8)),
@@ -168,9 +148,8 @@ enum PlanUsageClient {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard code == 200 else {
-                return .unavailable(code == 401 ? "Sign-in expired. Use Claude Code once to refresh it." : "Plan limits unavailable (HTTP \(code)).")
-            }
+            if code == 401 || code == 403 { return .unavailable("Sign-in expired. Use Claude Code once to refresh it.") }
+            guard code == 200 else { return nil }
             let r = try JSONDecoder().decode(Response.self, from: data)
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -186,7 +165,7 @@ enum PlanUsageClient {
             ].compactMap { $0 }
             return limits.isEmpty ? .unavailable("No plan limits reported.") : .loaded(limits)
         } catch {
-            return .unavailable("Couldn't reach Anthropic.")
+            return nil
         }
     }
 }

@@ -15,11 +15,15 @@ struct TallyApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
+        // A plain Window rather than a Settings scene: menu-bar-only apps
+        // can't reliably bring the Settings scene forward.
+        Window("Tally Settings", id: "settings") {
             SettingsView()
                 .environment(model)
         }
         .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
 }
 
@@ -160,7 +164,7 @@ struct SettingsView: View {
                     Label(Rex.isAvailable ? "Rex" : "Rex not found", systemImage: Rex.isAvailable ? "checkmark.circle.fill" : "xmark.circle")
                         .foregroundStyle(Rex.isAvailable ? .green : .secondary)
                 }
-                Text("Show, Compact, Interrupt and Send work for sessions running in Rex. New sessions open in Rex, or Terminal if Rex isn't installed.")
+                Text("Go to session, Compact, Interrupt and Send work for sessions running in Rex.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

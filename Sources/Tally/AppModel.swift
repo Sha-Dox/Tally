@@ -11,6 +11,7 @@ enum SettingsKey {
     static let notifyPlan = "notifyPlan"
     static let menuBarStyle = "menuBarStyle"
     static let showPlan = "showPlan"
+    static let pinnedSessions = "pinnedSessions"
 }
 
 @MainActor
@@ -195,9 +196,16 @@ final class AppModel {
             found.append(session)
         }
 
-        sessions = found.sorted {
-            if $0.isBusy != $1.isBusy { return $0.isBusy }
-            return ($0.context?.at ?? $0.startedAt) > ($1.context?.at ?? $1.startedAt)
+        // Stable order so rows never jump around: pinned sessions first in
+        // the order they were pinned, then the rest by start time.
+        let pins = pinned
+        sessions = found.sorted { a, b in
+            switch (pins.firstIndex(of: a.id), pins.firstIndex(of: b.id)) {
+            case let (x?, y?): return x < y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return (a.startedAt, a.pid) < (b.startedAt, b.pid)
+            }
         }
         lastUpdated = .now
         pendingCompactions.formIntersection(Set(found.map(\.id)))
@@ -218,9 +226,12 @@ final class AppModel {
         guard UserDefaults.standard.bool(forKey: SettingsKey.showPlan) else { return }
         if !force, let at = planFetchedAt, Date.now.timeIntervalSince(at) < 60 { return }
         planFetchedAt = .now
-        let result = await PlanUsageClient.fetch()
-        // Keep the last good numbers through a transient failure.
-        if case .unavailable = result, case .loaded = plan, force == false { return }
+        guard let result = await PlanUsageClient.fetch() else {
+            // Transient failure: keep the last good numbers if there are any.
+            if case .loaded = plan { return }
+            plan = .unavailable("Couldn't reach Anthropic. Retrying shortly.")
+            return
+        }
         plan = result
         checkPlanWarnings()
     }
@@ -299,15 +310,27 @@ final class AppModel {
         }
     }
 
-    func newSession(in directory: String) {
-        Task {
-            if Rex.isAvailable, await Rex.newSession(in: directory) { return }
-            TerminalFallback.run("claude", in: directory)
-        }
+    // MARK: Pinning
+
+    var pinned: [String] {
+        UserDefaults.standard.stringArray(forKey: SettingsKey.pinnedSessions) ?? []
+    }
+
+    func isPinned(_ session: LiveSession) -> Bool { pinned.contains(session.id) }
+
+    func togglePin(_ session: LiveSession) {
+        var pins = pinned
+        if let i = pins.firstIndex(of: session.id) { pins.remove(at: i) } else { pins.append(session.id) }
+        // Forget pins for sessions that are no longer running.
+        let live = Set(sessions.map(\.id))
+        pins.removeAll { !live.contains($0) }
+        UserDefaults.standard.set(pins, forKey: SettingsKey.pinnedSessions)
+        withAnimation(.smooth) { refreshSessions() }
     }
 
     func resumeCommand(for session: LiveSession) -> String {
-        "cd \(TerminalFallback.shellQuote(session.projectPath)) && claude --resume \(session.id)"
+        let dir = "'" + session.projectPath.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return "cd \(dir) && claude --resume \(session.id)"
     }
 
     func copyResumeCommand(_ session: LiveSession) {
@@ -319,20 +342,6 @@ final class AppModel {
     func revealTranscript(_ session: LiveSession) {
         guard let url = session.transcriptURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
-
-    var recentProjects: [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        let ordered = (sessions.map(\.projectPath) + days.keys.sorted(by: >).flatMap { day in
-            (days[day] ?? [:]).sorted { $0.value.total > $1.value.total }.map(\.key)
-        }).map(Project.root(of:)).filter { $0 != "/tmp" }
-        for path in ordered where !seen.contains(path) && FileManager.default.fileExists(atPath: path) {
-            seen.insert(path)
-            result.append(path)
-            if result.count == 8 { break }
-        }
-        return result
     }
 
     private func flash(_ message: String) {

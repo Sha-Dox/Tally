@@ -77,56 +77,30 @@ private struct Header: View {
 }
 
 private struct SettingsButton: View {
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Button {
+            openWindow(id: "settings")
             NSApp.activate()
-            openSettings()
         } label: {
             Image(systemName: "gearshape")
         }
+        .keyboardShortcut(",")
         .help("Settings")
         .accessibilityLabel("Settings")
     }
 }
 
 private struct Footer: View {
-    @Environment(AppModel.self) private var model
-
     var body: some View {
         HStack {
-            Menu {
-                Section("Recent Projects") {
-                    ForEach(model.recentProjects, id: \.self) { path in
-                        Button((path as NSString).abbreviatingWithTildeInPath) { model.newSession(in: path) }
-                    }
-                }
-                Divider()
-                Button("Choose Folder…") { chooseFolder() }
-            } label: {
-                Label("New Session", systemImage: "plus")
-            }
-            .menuIndicator(.hidden)
-            .fixedSize()
-
             Spacer()
-
             Button("Quit Tally") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         }
         .buttonStyle(.glass)
         .controlSize(.large)
-    }
-
-    private func chooseFolder() {
-        NSApp.activate()
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = "Start Session"
-        panel.message = "Choose a project folder for the new Claude Code session."
-        if panel.runModal() == .OK, let url = panel.url { model.newSession(in: url.path) }
     }
 }
 
