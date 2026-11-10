@@ -240,6 +240,9 @@ private struct LimitRow: View {
 
 private struct SessionsSection: View {
     @Environment(AppModel.self) private var model
+    /// Height of the list up to the bottom of the 4th row.
+    @State private var fourRowsHeight: CGFloat = 0
+    private let visibleRows = 4
 
     var body: some View {
         SectionCard("Sessions", contentPadding: 0) {
@@ -251,16 +254,35 @@ private struct SessionsSection: View {
                 }
                 .controlSize(.small)
                 .padding(12)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(model.sessions.enumerated()), id: \.element.id) { index, session in
-                        if index > 0 { Divider().padding(.vertical, 10) }
-                        SessionRow(session: session)
-                    }
+            } else if model.sessions.count > visibleRows {
+                // Show four rows and scroll the rest. A ScrollView has no
+                // height of its own in a menu bar window, so it's set from
+                // where the 4th row ends.
+                ScrollView {
+                    rows
                 }
-                .padding(12)
+                .scrollIndicators(.visible)
+                .frame(height: max(fourRowsHeight + 12, 120))
+            } else {
+                rows
             }
         }
+    }
+}
+
+extension SessionsSection {
+    private var rows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(model.sessions.enumerated()), id: \.element.id) { index, session in
+                if index > 0 { Divider().padding(.vertical, 10) }
+                SessionRow(session: session)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("sessionList")).maxY } action: { maxY in
+                        if index == visibleRows - 1 { fourRowsHeight = maxY }
+                    }
+            }
+        }
+        .padding(12)
+        .coordinateSpace(.named("sessionList"))
     }
 }
 
