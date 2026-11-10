@@ -17,7 +17,7 @@ Liquid Glass.
 - **Context warnings:** a banner plus a notification with a *Compact Now*
   action when a session crosses the warning level. The warning re-arms after
   you compact.
-- **Session controls** (for sessions running in [Rex](https://rex.sh)): go to
+- **Session controls** (for sessions running in the Rex terminal): go to
   the session, compact (queued until the session is idle), interrupt, or send
   it a message. Also: pin to top, copy resume command, show transcript, end
   session.
