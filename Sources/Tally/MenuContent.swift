@@ -108,11 +108,13 @@ private struct Footer: View {
 
 private struct SectionCard<Content: View, Accessory: View>: View {
     let title: String
+    var contentPadding: CGFloat = 12
     @ViewBuilder var accessory: Accessory
     @ViewBuilder var content: Content
 
-    init(_ title: String, @ViewBuilder accessory: () -> Accessory = { EmptyView() }, @ViewBuilder content: () -> Content) {
+    init(_ title: String, contentPadding: CGFloat = 12, @ViewBuilder accessory: () -> Accessory = { EmptyView() }, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.contentPadding = contentPadding
         self.accessory = accessory()
         self.content = content()
     }
@@ -128,7 +130,7 @@ private struct SectionCard<Content: View, Accessory: View>: View {
             }
             .padding(.horizontal, 4)
             VStack(alignment: .leading, spacing: 0) { content }
-                .padding(12)
+                .padding(contentPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.fill.quinary, in: .rect(cornerRadius: 14))
         }
@@ -224,7 +226,9 @@ private struct SessionsSection: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        SectionCard("Sessions") {
+        // Padding lives inside the scroll view so the busy pulse and glass
+        // shadows at the edges aren't clipped by it.
+        SectionCard("Sessions", contentPadding: 0) {
             if model.sessions.isEmpty {
                 ContentUnavailableView {
                     Label("No Live Sessions", systemImage: "terminal")
@@ -232,6 +236,7 @@ private struct SessionsSection: View {
                     Text("Start Claude Code in a terminal and it shows up here.")
                 }
                 .controlSize(.small)
+                .padding(12)
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -240,6 +245,7 @@ private struct SessionsSection: View {
                             SessionRow(session: session)
                         }
                     }
+                    .padding(12)
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: 330)
