@@ -58,6 +58,14 @@ Liquid Glass.
 other Macs without Gatekeeper warnings, sign with a *Developer ID Application*
 identity and notarize the zip.
 
+## First run
+
+On first launch Tally opens a **Set Up Tally** window with the recommended
+options already selected: notifications, keep awake (including with the lid
+closed), open at login, and open with Claude Code. Click **Set Up**. The only
+thing you'll be asked for is your password, once, for the lid-closed option.
+You can run it again from *Settings → General → Run Setup…*.
+
 ## How it works and privacy
 
 Tally runs entirely on your Mac and reads only what Claude Code already keeps:

@@ -24,6 +24,16 @@ struct TallyApp: App {
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
+
+        // Shown automatically until setup is finished or skipped.
+        Window("Set Up Tally", id: "setup") {
+            SetupView()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .defaultLaunchBehavior(UserDefaults.standard.bool(forKey: SettingsKey.setupCompleted) ? .suppressed : .presented)
+        .restorationBehavior(.disabled)
     }
 }
 
@@ -248,6 +258,12 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
         }
 
+        Section {
+            LabeledContent("First-time setup") {
+                RunSetupButton()
+            }
+        }
+
         Section("Session Controls") {
             LabeledContent("Terminal") {
                 Label(Rex.isAvailable ? "Rex" : "Rex not found", systemImage: Rex.isAvailable ? "checkmark.circle.fill" : "xmark.circle")
@@ -256,6 +272,17 @@ struct SettingsView: View {
             Text("Go to session, Compact, Interrupt and Send work for sessions running in Rex.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct RunSetupButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Run Setup…") {
+            openWindow(id: "setup")
+            NSApp.activate()
         }
     }
 }

@@ -16,6 +16,7 @@ enum SettingsKey {
     static let followClaudeCode = "followClaudeCode"
     static let keepAwake = "keepAwake"
     static let keepAwakeLidClosed = "keepAwakeLidClosed"
+    static let setupCompleted = "setupCompleted"
 }
 
 @MainActor
