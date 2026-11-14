@@ -13,11 +13,14 @@ struct LiveSession: Identifiable, Hashable {
     var transcriptURL: URL?
     var context: ContextReading?
     var rexBlock: String?
+    /// What a "waiting" session needs from the user, e.g. a permission prompt.
+    var waitingFor: String?
 
     var projectName: String { Project.name(of: Project.root(of: projectPath)) }
 
     var isBusy: Bool { status == "busy" }
     var isIdle: Bool { status == "idle" }
+    var isWaiting: Bool { status == "waiting" }
     var canControl: Bool { rexBlock != nil }
 }
 
@@ -66,17 +69,19 @@ enum Project {
     }
 }
 
-struct DayUsage: Identifiable, Hashable {
-    let date: Date
-    let totals: TokenTotals
-    var id: Date { date }
-}
-
 struct ProjectUsage: Identifiable, Hashable {
     let path: String
     let totals: TokenTotals
     var id: String { path }
     var name: String { Project.name(of: path) }
+}
+
+/// One stacked bar segment: a project's tokens on one day.
+struct ProjectDay: Identifiable, Hashable {
+    let date: Date
+    let series: String
+    let tokens: Int
+    var id: String { "\(date.timeIntervalSince1970)|\(series)" }
 }
 
 struct PlanLimit: Identifiable, Hashable {

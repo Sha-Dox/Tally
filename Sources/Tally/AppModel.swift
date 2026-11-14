@@ -17,6 +17,9 @@ enum SettingsKey {
     static let keepAwake = "keepAwake"
     static let keepAwakeLidClosed = "keepAwakeLidClosed"
     static let setupCompleted = "setupCompleted"
+    static let notifyDone = "notifyDone"
+    static let notifyNeedsYou = "notifyNeedsYou"
+    static let showBadge = "showBadge"
 }
 
 @MainActor
@@ -51,6 +54,17 @@ final class AppModel {
     @ObservationIgnored private var sleepAssertion = IOPMAssertionID(0)
     @ObservationIgnored private var networkAssertion = IOPMAssertionID(0)
     @ObservationIgnored private var lidChangeInFlight = false
+    /// Last seen status per session and when its current turn started.
+    @ObservationIgnored private var lastStatus: [String: String] = [:]
+    @ObservationIgnored private var busySince: [String: Date] = [:]
+    /// Sessions that finished a turn since the menu was last opened.
+    var unseenDone: Set<String> = []
+
+    /// Something wants your attention: a session is waiting on you, or one
+    /// finished since you last looked.
+    var needsAttention: Bool {
+        sessions.contains(where: \.isWaiting) || !unseenDone.isEmpty
+    }
 
     var threshold: Int {
         let v = UserDefaults.standard.integer(forKey: SettingsKey.threshold)
@@ -98,6 +112,9 @@ final class AppModel {
             SettingsKey.menuBarStyle: MenuBarStyle.percent.rawValue,
             SettingsKey.showPlan: true,
             SettingsKey.keepAwakeLidClosed: true,
+            SettingsKey.notifyDone: true,
+            SettingsKey.notifyNeedsYou: true,
+            SettingsKey.showBadge: true,
         ])
         Notifier.shared.configure(model: self)
 
@@ -141,12 +158,45 @@ final class AppModel {
         return t
     }
 
-    var lastSevenDays: [DayUsage] {
+
+    static let otherSeries = "Other"
+
+    /// The last 7 days grouped by project: the week's top three projects by
+    /// name, everything else folded into "Other".
+    var weekByProject: (series: [ProjectUsage], days: [ProjectDay]) {
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
-        return (0..<7).reversed().compactMap { offset in
-            cal.date(byAdding: .day, value: -offset, to: today).map { DayUsage(date: $0, totals: totals(onDay: $0)) }
+        let dates = (0..<7).reversed().compactMap { cal.date(byAdding: .day, value: -$0, to: today) }
+
+        var perDay: [Date: [String: TokenTotals]] = [:]
+        var weekly: [String: TokenTotals] = [:]
+        for date in dates {
+            for (path, totals) in days[dayKey(date)] ?? [:] {
+                let project = Project.root(of: path)
+                perDay[date, default: [:]][project, default: TokenTotals()].add(totals)
+                weekly[project, default: TokenTotals()].add(totals)
+            }
         }
+        let ranked = weekly.sorted { $0.value.total > $1.value.total }
+        let top = ranked.prefix(3).map(\.key)
+        var series = ranked.prefix(3).map { ProjectUsage(path: $0.key, totals: $0.value) }
+        var other = TokenTotals()
+        ranked.dropFirst(3).forEach { other.add($0.value) }
+        if other.total > 0 { series.append(ProjectUsage(path: Self.otherSeries, totals: other)) }
+
+        var segments: [ProjectDay] = []
+        for date in dates {
+            var rest = 0
+            for (project, totals) in perDay[date] ?? [:] {
+                if top.contains(project) {
+                    segments.append(ProjectDay(date: date, series: project, tokens: totals.total))
+                } else {
+                    rest += totals.total
+                }
+            }
+            if rest > 0 { segments.append(ProjectDay(date: date, series: Self.otherSeries, tokens: rest)) }
+        }
+        return (series, segments)
     }
 
     var todayByProject: [ProjectUsage] {
@@ -175,6 +225,7 @@ final class AppModel {
     }
 
     func popoverOpened() {
+        unseenDone.removeAll()
         refreshSessions()
         Task { await refreshPlan(force: false) }
     }
@@ -203,6 +254,7 @@ final class AppModel {
                 launchCwd: cwd,
                 projectPath: cwd
             )
+            session.waitingFor = raw["waitingFor"] as? String
             if let existing = sessions.first(where: { $0.id == id && $0.pid == session.pid }) {
                 session.rexBlock = existing.rexBlock
                 session.transcriptURL = existing.transcriptURL
@@ -241,6 +293,7 @@ final class AppModel {
             }
         }
         lastUpdated = .now
+        trackTurns()
         updateSleepAssertion()
         quitIfClaudeCodeStopped()
         pendingCompactions.formIntersection(Set(found.map(\.id)))
@@ -318,6 +371,41 @@ final class AppModel {
     }
 
     // MARK: Warnings
+
+    /// Turns status changes into "done" and "needs you" alerts. A turn has to
+    /// run for 30 seconds to count as done, so quick back-and-forth stays quiet.
+    private func trackTurns() {
+        let defaults = UserDefaults.standard
+        let first = lastStatus.isEmpty
+        for session in sessions {
+            let previous = lastStatus[session.id]
+            lastStatus[session.id] = session.status
+            if session.isBusy {
+                if busySince[session.id] == nil { busySince[session.id] = .now }
+                unseenDone.remove(session.id)
+            }
+            // Don't alert about states that existed before Tally launched.
+            guard !first, let previous, previous != session.status else { continue }
+
+            if session.isWaiting, defaults.bool(forKey: SettingsKey.notifyNeedsYou) {
+                Notifier.shared.sessionNeedsYou(session)
+            }
+            if session.isIdle, previous == "busy" || previous == "waiting" {
+                let started = busySince.removeValue(forKey: session.id)
+                let duration = started.map { Date.now.timeIntervalSince($0) } ?? 0
+                if duration >= 30 {
+                    unseenDone.insert(session.id)
+                    if defaults.bool(forKey: SettingsKey.notifyDone) {
+                        Notifier.shared.sessionDone(session, after: duration)
+                    }
+                }
+            }
+        }
+        let live = Set(sessions.map(\.id))
+        lastStatus = lastStatus.filter { live.contains($0.key) }
+        busySince = busySince.filter { live.contains($0.key) }
+        unseenDone.formIntersection(live)
+    }
 
     private func checkContextWarnings() {
         let over = Set(overThreshold.map(\.id))
@@ -459,6 +547,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let show = UNNotificationAction(identifier: "show", title: "Show Session", options: [.foreground])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: "context", actions: [compact, show], intentIdentifiers: []),
+            UNNotificationCategory(identifier: "session", actions: [show], intentIdentifiers: []),
         ])
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
@@ -471,6 +560,32 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.categoryIdentifier = "context"
         content.userInfo = ["session": session.id]
         center.add(UNNotificationRequest(identifier: "context-\(session.id)", content: content, trigger: nil))
+    }
+
+    func sessionDone(_ session: LiveSession, after duration: TimeInterval) {
+        let f = DateComponentsFormatter()
+        f.allowedUnits = duration >= 3600 ? [.hour, .minute] : [.minute, .second]
+        f.unitsStyle = .abbreviated
+        post("done-\(session.id)", session: session,
+             title: "\(session.projectName) is done",
+             body: "\(session.name) finished after \(f.string(from: duration) ?? "a while").")
+    }
+
+    func sessionNeedsYou(_ session: LiveSession) {
+        let reason = session.waitingFor.map { " (\($0))" } ?? ""
+        post("waiting-\(session.id)", session: session,
+             title: "\(session.projectName) needs you",
+             body: "\(session.name) is waiting for your input\(reason).")
+    }
+
+    private func post(_ id: String, session: LiveSession, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.categoryIdentifier = "session"
+        content.userInfo = ["session": session.id]
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
     func planWarning(_ limit: PlanLimit) {

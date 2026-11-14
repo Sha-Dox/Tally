@@ -288,51 +288,156 @@ extension SessionsSection {
 
 private struct TodaySection: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var selected: String?
+    @State private var hoverDate: Date?
+
+    /// Validated categorical slots (blue, orange, aqua) per mode; "Other" is neutral.
+    private var palette: [Color] {
+        colorScheme == .dark
+            ? [Color(hex: 0x3987e5), Color(hex: 0xd95926), Color(hex: 0x199e70)]
+            : [Color(hex: 0x2a78d6), Color(hex: 0xeb6834), Color(hex: 0x1baf7a)]
+    }
+
+    private func color(for series: String, in all: [ProjectUsage]) -> Color {
+        if series == AppModel.otherSeries { return .gray }
+        let index = all.firstIndex { $0.path == series } ?? 0
+        return palette[min(index, palette.count - 1)]
+    }
 
     var body: some View {
-        let today = model.totals(onDay: .now)
-        SectionCard("Today") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Stat(value: Format.tokens(today.total), label: "tokens")
-                    Stat(value: Format.tokens(today.output), label: "output")
-                    Stat(value: Format.tokens(today.cacheRead), label: "cache read")
-                    Stat(value: "\(today.messages)", label: "replies")
-                }
+        let week = model.weekByProject
+        let today: TokenTotals = selected.map { s in
+            model.todayByProject.first { $0.path == s }?.totals ?? TokenTotals()
+        } ?? model.totals(onDay: .now)
 
-                Chart(model.lastSevenDays) { day in
-                    BarMark(
-                        x: .value("Day", day.date, unit: .day),
-                        y: .value("Tokens", day.totals.total)
-                    )
-                    .foregroundStyle(Calendar.current.isDateInToday(day.date) ? Color.accentColor : Color.secondary.opacity(0.45))
-                    .clipShape(.rect(cornerRadius: 3))
-                }
-                .chartYAxis(.hidden)
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { _ in
-                        AxisValueLabel(format: .dateTime.weekday(.narrow), centered: true)
+        SectionCard("Usage") {
+            if let selected {
+                Button("Show all") { withAnimation(.smooth) { self.selected = nil } }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .help("Stop filtering by \(Project.name(of: selected))")
+            }
+        } content: {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(selected.map { "\(seriesName($0)) today" } ?? "Today")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        Stat(value: Format.tokens(today.total), label: "tokens")
+                        Stat(value: Format.tokens(today.output), label: "output")
+                        Stat(value: Format.tokens(today.cacheRead), label: "cache read")
+                        Stat(value: "\(today.messages)", label: "replies")
                     }
                 }
-                .frame(height: 64)
-                .accessibilityLabel("Tokens per day, last seven days")
 
-                let projects = model.todayByProject.prefix(3)
-                if !projects.isEmpty {
-                    VStack(spacing: 6) {
-                        ForEach(projects) { p in
-                            HStack {
-                                Image(systemName: "folder").foregroundStyle(.secondary)
-                                Text(p.name).lineLimit(1)
-                                Spacer()
-                                Text(Format.tokens(p.totals.total)).monospacedDigit().foregroundStyle(.secondary)
-                            }
-                            .font(.callout)
+                chart(week)
+
+                if !week.series.isEmpty {
+                    VStack(spacing: 2) {
+                        ForEach(week.series) { p in
+                            legendRow(p, color: color(for: p.path, in: week.series))
                         }
                     }
                 }
             }
         }
+    }
+
+    private func seriesName(_ series: String) -> String {
+        series == AppModel.otherSeries ? "Other" : Project.name(of: series)
+    }
+
+    private func chart(_ week: (series: [ProjectUsage], days: [ProjectDay])) -> some View {
+        let domain = week.series.map(\.path)
+        let range = week.series.map { color(for: $0.path, in: week.series) }
+        let hovered = hoverDate.map { Calendar.current.startOfDay(for: $0) }
+
+        return Chart {
+            ForEach(week.days) { d in
+                BarMark(
+                    x: .value("Day", d.date, unit: .day),
+                    y: .value("Tokens", d.tokens)
+                )
+                .foregroundStyle(by: .value("Project", d.series))
+                .opacity(selected == nil || selected == d.series ? 1 : 0.2)
+            }
+            if let hovered {
+                RuleMark(x: .value("Day", hovered, unit: .day))
+                    .foregroundStyle(.secondary.opacity(0.25))
+                    .lineStyle(StrokeStyle(lineWidth: 18))
+                    .zIndex(-1)
+                    .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        tooltip(for: hovered, in: week)
+                    }
+            }
+        }
+        .chartForegroundStyleScale(domain: domain, range: range)
+        .chartLegend(.hidden)
+        .chartYAxis(.hidden)
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day)) { _ in
+                AxisValueLabel(format: .dateTime.weekday(.narrow), centered: true)
+            }
+        }
+        .chartXSelection(value: $hoverDate)
+        .frame(height: 76)
+        .accessibilityLabel("Tokens per day by project, last seven days")
+    }
+
+    private func tooltip(for date: Date, in week: (series: [ProjectUsage], days: [ProjectDay])) -> some View {
+        let segments = week.days.filter { $0.date == date }.sorted { $0.tokens > $1.tokens }
+        let total = segments.reduce(0) { $0 + $1.tokens }
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(date.formatted(.dateTime.weekday(.wide).month().day()))
+                .font(.caption.weight(.semibold))
+            Text("\(Format.tokens(total)) tokens").font(.caption).foregroundStyle(.secondary)
+            ForEach(segments) { s in
+                HStack(spacing: 5) {
+                    Circle().fill(color(for: s.series, in: week.series)).frame(width: 6, height: 6)
+                    Text(seriesName(s.series)).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(Format.tokens(s.tokens)).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .font(.caption)
+            }
+        }
+        .padding(8)
+        .frame(width: 170)
+        .glassEffect(.regular, in: .rect(cornerRadius: 10))
+    }
+
+    private func legendRow(_ p: ProjectUsage, color: Color) -> some View {
+        let isSelected = selected == p.path
+        let isOther = p.path == AppModel.otherSeries
+        return Button {
+            withAnimation(.smooth) { selected = isSelected ? nil : p.path }
+        } label: {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 10)
+                Text(seriesName(p.path)).lineLimit(1)
+                Spacer()
+                Text("\(Format.tokens(p.totals.total)) this week")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            .font(.callout)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(isSelected ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 6))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(!isOther)
+        .help(isOther ? "" : isSelected ? "Show all projects" : "Show only \(seriesName(p.path))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private extension Color {
+    init(hex: UInt32) {
+        self.init(red: Double((hex >> 16) & 0xff) / 255, green: Double((hex >> 8) & 0xff) / 255, blue: Double(hex & 0xff) / 255)
     }
 }
 

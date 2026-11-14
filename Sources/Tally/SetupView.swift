@@ -9,6 +9,7 @@ struct SetupView: View {
     @Environment(\.dismissWindow) private var dismissWindow
 
     @State private var notify = true
+    @State private var sessionAlerts = true
     @State private var keepAwake = true
     @State private var lidClosed = true
     @State private var openAtLogin = true
@@ -17,7 +18,7 @@ struct SetupView: View {
     @State private var results: [Step: Result] = [:]
     @State private var running = false
 
-    enum Step: Hashable { case notify, keepAwake, lid, login, follow }
+    enum Step: Hashable { case notify, alerts, keepAwake, lid, login, follow }
     enum Result: Equatable { case done, failed(String) }
 
     private var finished: Bool { !results.isEmpty && !running }
@@ -40,6 +41,9 @@ struct SetupView: View {
             VStack(spacing: 0) {
                 row(.notify, $notify, "bell.badge", "Notifications",
                     "Warn me when a session's context gets big or a plan limit is nearly used up.")
+                Divider().padding(.leading, 44)
+                row(.alerts, $sessionAlerts, "bell.and.waves.left.and.right", "Tell me when Claude is done or needs me",
+                    "A notification and a menu bar badge when a session finishes or stops at a prompt.")
                 Divider().padding(.leading, 44)
                 row(.keepAwake, $keepAwake, "cup.and.saucer", "Keep Mac awake while Claude works",
                     "No idle sleep while a session is working. Normal sleep once they're idle.")
@@ -151,6 +155,14 @@ struct SetupView: View {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier ?? "")")!)
                 record(.notify, .failed("Notifications are off for Tally. Turn them on in System Settings, which just opened."))
             }
+        }
+
+        let alertKeys = [SettingsKey.notifyDone, SettingsKey.notifyNeedsYou, SettingsKey.showBadge]
+        if selected(.alerts, sessionAlerts) {
+            alertKeys.forEach { UserDefaults.standard.set(true, forKey: $0) }
+            record(.alerts, .done)
+        } else if !sessionAlerts {
+            alertKeys.forEach { UserDefaults.standard.set(false, forKey: $0) }
         }
 
         if selected(.keepAwake, keepAwake) {

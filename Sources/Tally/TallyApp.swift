@@ -5,6 +5,24 @@ import SwiftUI
 struct TallyApp: App {
     @State private var model = AppModel()
 
+    init() {
+        // Developer aid: `Tally --render-menu out.png` saves the menu to an
+        // image (without Liquid Glass) for checking layout, then quits.
+        if let i = CommandLine.arguments.firstIndex(of: "--render-menu"), i + 1 < CommandLine.arguments.count {
+            let path = CommandLine.arguments[i + 1]
+            let model = _model.wrappedValue
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                let renderer = ImageRenderer(content: MenuContent().environment(model).background(Color(white: 0.16)).environment(\.colorScheme, .dark))
+                renderer.scale = 2
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: path))
+                }
+                exit(0)
+            }
+        }
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuContent()
@@ -40,6 +58,9 @@ struct TallyApp: App {
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var model
     @AppStorage(SettingsKey.menuBarStyle) private var style = MenuBarStyle.percent.rawValue
+    @AppStorage(SettingsKey.showBadge) private var showBadge = true
+
+    private var badge: Bool { showBadge && model.needsAttention }
 
     var body: some View {
         Group {
@@ -51,6 +72,7 @@ struct MenuBarLabel: View {
                 HStack(spacing: 3) {
                     Image(systemName: symbol)
                     if let text { Text(text).monospacedDigit() }
+                    if badge { Image(systemName: "circle.fill").imageScale(.small) }
                 }
             }
         }
@@ -62,6 +84,16 @@ struct MenuBarLabel: View {
         let content = Grid(alignment: .trailing, horizontalSpacing: 2, verticalSpacing: -1) {
             GridRow {
                 Image(systemName: symbol).font(.system(size: 9, weight: .bold))
+                    .overlay(alignment: .topTrailing) {
+                        // Waiting badge: a dot cut out of the gauge's corner.
+                        if badge {
+                            Circle().frame(width: 5, height: 5)
+                                .padding(1.2)
+                                .background(Circle().blendMode(.destinationOut))
+                                .offset(x: 2.5, y: -2)
+                        }
+                    }
+                    .compositingGroup()
                     .gridColumnAlignment(.center)
                 Text("\(Int(session.percent.rounded()))%")
             }
@@ -116,6 +148,7 @@ struct MenuBarLabel: View {
         if let limit = model.sessionLimit { parts.append("\(Int(limit.percent)) percent of 5-hour limit") }
         if let limit = model.weeklyLimit { parts.append("\(Int(limit.percent)) percent of weekly limit") }
         if warning { parts.append("\(model.overThreshold.count) sessions over the context threshold") }
+        if badge { parts.append("a session needs your attention") }
         return parts.joined(separator: ", ")
     }
 }
@@ -126,6 +159,9 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.criticalThreshold) private var critical = 600_000
     @AppStorage(SettingsKey.notifyContext) private var notifyContext = true
     @AppStorage(SettingsKey.notifyPlan) private var notifyPlan = true
+    @AppStorage(SettingsKey.notifyDone) private var notifyDone = true
+    @AppStorage(SettingsKey.notifyNeedsYou) private var notifyNeedsYou = true
+    @AppStorage(SettingsKey.showBadge) private var showBadge = true
     @AppStorage(SettingsKey.showPlan) private var showPlan = true
     @AppStorage(SettingsKey.menuBarStyle) private var style = MenuBarStyle.percent.rawValue
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -141,6 +177,7 @@ struct SettingsView: View {
         TabView {
             Tab("General", systemImage: "gearshape") { page(general) }
             Tab("Context", systemImage: "gauge.with.dots.needle.67percent") { page(context) }
+            Tab("Alerts", systemImage: "bell") { page(alerts) }
             Tab("Keep Awake", systemImage: "cup.and.saucer") { page(keepAwake) }
         }
         .frame(width: 460)
@@ -173,12 +210,31 @@ struct SettingsView: View {
             Picker("Turn red above", selection: $critical) {
                 ForEach(thresholds.filter { $0 > threshold }, id: \.self) { Text("\(Format.tokens($0)) tokens").tag($0) }
             }
-            Toggle("Send a notification", isOn: $notifyContext)
         } header: {
             Text("Context")
         } footer: {
             Text("Context turns orange past the warning level and red past the second one. Each session's context is the token count of its latest reply; the warning resets after you compact.")
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var alerts: some View {
+        Section {
+            Toggle("When a session finishes", isOn: $notifyDone)
+            Toggle("When a session needs you", isOn: $notifyNeedsYou)
+            Toggle("Badge in the menu bar", isOn: $showBadge)
+        } header: {
+            Text("Sessions")
+        } footer: {
+            Text("A session counts as finished after a turn of 30 seconds or more, so quick back-and-forth stays quiet. It needs you when it stops at a permission prompt or a question. The badge shows until you open Tally's menu.")
+                .foregroundStyle(.secondary)
+        }
+
+        Section("Limits") {
+            Toggle("When a session goes over the context warning", isOn: $notifyContext)
+            Toggle("When a plan limit reaches 90%", isOn: $notifyPlan)
+                .disabled(!showPlan)
         }
     }
 
@@ -224,8 +280,6 @@ struct SettingsView: View {
 
         Section("Plan") {
             Toggle("Show plan limits", isOn: $showPlan)
-            Toggle("Notify at 90% of a limit", isOn: $notifyPlan)
-                .disabled(!showPlan)
         }
 
         Section {

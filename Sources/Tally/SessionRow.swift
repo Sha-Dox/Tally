@@ -34,7 +34,8 @@ struct SessionRow: View {
                 Spacer(minLength: 4)
                 Text(statusText)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(session.isWaiting ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                    .help(session.waitingFor.map { "Waiting for \($0)" } ?? "")
             }
 
             ContextMeter(tokens: tokens, scale: model.criticalThreshold, tint: model.contextColor(tokens))
@@ -93,6 +94,7 @@ struct SessionRow: View {
         switch session.status {
         case "busy": return "Working"
         case "idle": return "Idle"
+        case "waiting": return "Needs you"
         default: return session.status.capitalized
         }
     }
@@ -209,6 +211,7 @@ private struct StatusDot: View {
         switch status {
         case "busy": .green
         case "idle": .secondary
+        case "waiting": .orange
         default: .yellow
         }
     }
