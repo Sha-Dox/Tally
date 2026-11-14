@@ -22,4 +22,6 @@ codesign --verify --strict "$APP"
 ZIP="build/Tally-$VERSION.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
-echo "Built $ZIP"
+# Unversioned copy for install.sh's releases/latest/download/Tally.zip link.
+cp "$ZIP" build/Tally.zip
+echo "Built $ZIP (and build/Tally.zip)"

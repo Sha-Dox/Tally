@@ -10,14 +10,12 @@ if [[ "$(uname)" != "Darwin" ]]; then echo "Tally runs on macOS only." >&2; exit
 major=$(sw_vers -productVersion | cut -d. -f1)
 if (( major < 26 )); then echo "Tally needs macOS 26 or later (this Mac has $(sw_vers -productVersion))." >&2; exit 1; fi
 
-echo "Finding the latest release…"
-url=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-  | grep -o '"browser_download_url": *"[^"]*\.zip"' | head -1 | cut -d'"' -f4)
-if [[ -z "$url" ]]; then echo "Couldn't find a release to download." >&2; exit 1; fi
+# GitHub redirects this to the newest release's Tally.zip (no API, no rate limit).
+url="https://github.com/$REPO/releases/latest/download/Tally.zip"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-echo "Downloading $(basename "$url")…"
+echo "Downloading the latest Tally…"
 curl -fsSL "$url" -o "$tmp/Tally.zip"
 ditto -x -k "$tmp/Tally.zip" "$tmp"
 
